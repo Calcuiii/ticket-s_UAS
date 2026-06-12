@@ -1,0 +1,123 @@
+# ──────────────────────────────────────
+# Types
+# ──────────────────────────────────────
+
+type Category {
+    id: ID!
+    name: String!
+    slug: String
+    description: String
+    is_active: Boolean
+    events: [Event!] @hasMany
+    created_at: String
+    updated_at: String
+}
+
+type Event {
+    id: ID!
+    category_id: Int
+    title: String!
+    slug: String
+    description: String
+    location: String
+    event_date: String
+    event_end_date: String
+    ticket_price: Float
+    total_stock: Int
+    available_stock: Int
+    status: String
+    organizer_name: String
+    banner_url: String
+    category: Category @belongsTo
+    created_at: String
+    updated_at: String
+}
+
+# ──────────────────────────────────────
+# Query
+# ──────────────────────────────────────
+
+type Query {
+    # Ambil semua kategori
+    categories(
+        is_active: Boolean @eq
+    ): [Category!]! @all
+
+    # Ambil satu kategori by ID
+    category(id: ID! @eq): Category @find
+
+    # Ambil semua event
+    events(
+        status: String @eq
+        category_id: Int @eq
+        title: String @where(operator: "like")
+    ): [Event!]! @all @orderBy(column: "event_date", direction: ASC)
+
+    # Ambil satu event by ID
+    event(id: ID! @eq): Event @find
+}
+
+# ──────────────────────────────────────
+# Input Object Type
+# ──────────────────────────────────────
+
+input CreateEventInput {
+    category_id: Int!
+    title: String!
+    description: String
+    location: String!
+    event_date: String!
+    event_end_date: String
+    ticket_price: Float!
+    total_stock: Int!
+    organizer_name: String!
+    status: String
+}
+
+input UpdateEventInput {
+    category_id: Int
+    title: String
+    description: String
+    location: String
+    event_date: String
+    event_end_date: String
+    ticket_price: Float
+    total_stock: Int
+    organizer_name: String
+    status: String
+}
+
+input CreateCategoryInput {
+    name: String!
+    description: String
+}
+
+input UpdateCategoryInput {
+    name: String
+    description: String
+    is_active: Boolean
+}
+
+# ──────────────────────────────────────
+# Mutation and Resolver
+# ──────────────────────────────────────
+
+type Mutation {
+    createEvent(input: CreateEventInput!): Event
+        @field(resolver: "App\\GraphQL\\Mutations\\EventMutations@create")
+
+    updateEvent(id: ID!, input: UpdateEventInput!): Event
+        @field(resolver: "App\\GraphQL\\Mutations\\EventMutations@update")
+
+    deleteEvent(id: ID!): Event
+        @field(resolver: "App\\GraphQL\\Mutations\\EventMutations@delete")
+
+    createCategory(input: CreateCategoryInput!): Category
+        @field(resolver: "App\\GraphQL\\Mutations\\CategoryMutations@create")
+
+    updateCategory(id: ID!, input: UpdateCategoryInput!): Category
+        @field(resolver: "App\\GraphQL\\Mutations\\CategoryMutations@update")
+    
+    deleteCategory(id: ID!): Category
+        @field(resolver: "App\\GraphQL\\Mutations\\CategoryMutations@delete")
+}

@@ -1,0 +1,88 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+
+  # Event Service (Laravel)
+  event_service:
+    build: .
+    container_name: event_service
+    ports:
+      - "8003:8000"
+    environment:
+      - DB_HOST=db_event
+      - DB_DATABASE=db_event
+      - DB_USERNAME=root
+      - DB_PASSWORD=secret
+      - JWT_SECRET=${JWT_SECRET}
+      - HASURA_ADMIN_SECRET=myadminsecretkey
+    depends_on:
+      - db_event
+      - redis
+    networks:
+      - microservice_network
+    volumes:
+      - .:/var/www
+
+  # MySQL untuk Event Service
+  db_event:
+    image: mysql:8.0
+    container_name: db_event
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: db_event
+    volumes:
+      - db_event_data:/var/lib/mysql
+    networks:
+      - microservice_network
+
+  # Hasura GraphQL Engine
+# Postgres khusus metadata Hasura (bukan untuk data event)
+  postgres_hasura:
+    image: postgres:15-alpine
+    container_name: postgres_hasura
+    environment:
+      POSTGRES_DB: hasura_metadata
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_hasura_data:/var/lib/postgresql/data
+    networks:
+      - microservice_network
+
+  # Hasura GraphQL Engine
+  hasura:
+    image: hasura/graphql-engine:v2.36.0
+    container_name: hasura_event
+    ports:
+      - "8080:8080"
+    environment:
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgresql://postgres:postgres@postgres_hasura:5432/hasura_metadata
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      HASURA_GRAPHQL_DEV_MODE: "true"
+      HASURA_GRAPHQL_ADMIN_SECRET: myadminsecretkey
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: public
+      HASURA_GRAPHQL_JWT_SECRET: >
+        {"type":"HS256","key":"${JWT_SECRET}","default_role":"user"}
+    depends_on:
+      - postgres_hasura
+      - db_event
+    networks:
+      - microservice_network
+
+  # Redis (shared antar service)
+  redis:
+    image: redis:7-alpine
+    container_name: redis_shared
+    ports:
+      - "6379:6379"
+    networks:
+      - microservice_network
+
+networks:
+  microservice_network:
+    external: true   # shared dengan service lain
+
+volumes:
+  db_event_data:
+  postgres_hasura_data: 
