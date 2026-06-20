@@ -1,0 +1,92 @@
+version: "3.8"
+
+# ============================================================
+# docker-compose.yml — Ticket Service + Hasura
+# Karin - TUBES Integrasi Application Enterprise
+# ============================================================
+# Jalankan: docker-compose up -d
+# ============================================================
+
+services:
+
+  # ─── MySQL untuk Ticket Service ───────────────────────────
+  db_ticket:
+    image: mysql:8.0
+    container_name: db_ticket
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: db_ticket
+    volumes:
+      - db_ticket_data:/var/lib/mysql
+    ports:
+      - "3308:3306"           # port 3308 di host agar tidak bentrok
+    networks:
+      - tubes_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-psecret"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis (shared, bisa dari service lain) ────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - tubes_network
+
+  # ─── Ticket Service (Laravel) ─────────────────────────────
+  ticket-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ticket-service
+    restart: unless-stopped
+    ports:
+      - "8003:8000"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db_ticket
+      REDIS_HOST: redis
+      USER_SERVICE_URL: http://user-service:8001
+      EVENT_SERVICE_URL: http://event-service:8002
+    depends_on:
+      db_ticket:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - tubes_network
+
+  # ─── Hasura GraphQL Engine ────────────────────────────────
+  # Terhubung ke db_ticket, generate GraphQL endpoint otomatis
+  hasura:
+    image: hasura/graphql-engine:v2.36.0
+    container_name: hasura
+    restart: unless-stopped
+    ports:
+      - "8080:8080"           # Hasura Console: http://localhost:8080
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: mysql://root:secret@db_ticket:3306/db_ticket
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      HASURA_GRAPHQL_DEV_MODE: "true"
+      HASURA_GRAPHQL_ADMIN_SECRET: "myadminsecretkey"
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: "public"
+    depends_on:
+      db_ticket:
+        condition: service_healthy
+    networks:
+      - tubes_network
+
+volumes:
+  db_ticket_data:
+
+networks:
+  tubes_network:
+    external: true           # shared network dengan service lain
+    name: tubes_network
