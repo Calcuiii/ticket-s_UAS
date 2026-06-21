@@ -169,30 +169,79 @@ class EventController extends Controller
         ]);
     }
 
-     public function decreaseStock(Request $request, $id)
+    public function decreaseStock(Request $request, $id)
     {
-        // Validasi internal secret agar tidak bisa diakses sembarangan
-        $secret = $request->header('X-Internal-Secret');
-        if ($secret !== config('app.internal_secret')) {
-            return response()->json(['status' => false, 'message' => 'Forbidden'], 403);
-        }
-
         $request->validate([
             'quantity' => 'required|integer|min:1',
         ]);
 
-        $event = Event::findOrFail($id);
-        if (!$event->decreaseStock($request->quantity)) {
+        $event = Event::find($id);
+
+        if (!$event) {
             return response()->json([
                 'status'  => false,
-                'message' => 'Insufficient stock',
+                'message' => 'Event dengan ID ' . $id . ' tidak ditemukan'
+            ], 404);
+        }
+
+        if ($event->available_stock < $request->quantity) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Stok tiket tidak mencukupi',
                 'available_stock' => $event->available_stock
             ], 422);
         }
 
+        $event->decrement('available_stock', $request->quantity);
+
         return response()->json([
             'status'          => true,
-            'message'         => 'Stock decreased',
+            'message'         => 'Stok berhasil dikurangi',
+            'available_stock' => $event->fresh()->available_stock
+        ]);
+    }
+
+    public function checkStock($id)
+    {
+        $event = Event::find($id);
+
+        if (!$event) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Event tidak ditemukan'
+            ], 404);
+        }
+
+        return response()->json([
+            'status'          => true,
+            'event_id'        => $event->id,
+            'title'           => $event->title,
+            'available_stock' => $event->available_stock,
+            'ticket_price'    => $event->ticket_price,
+            'is_available'    => $event->available_stock > 0
+        ]);
+    }
+
+    public function increaseStock(Request $request, $id)
+    {
+        $request->validate([
+            'quantity' => 'required|integer|min:1',
+        ]);
+
+        $event = Event::find($id);
+
+        if (!$event) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Event dengan ID ' . $id . ' tidak ditemukan'
+            ], 404);
+        }
+
+        $event->increment('available_stock', $request->quantity);
+
+        return response()->json([
+            'status'          => true,
+            'message'         => 'Stok berhasil dikembalikan',
             'available_stock' => $event->fresh()->available_stock
         ]);
     }
