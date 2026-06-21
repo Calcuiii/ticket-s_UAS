@@ -34,3 +34,9 @@ Route::delete('/events/{id}', [EventController::class, 'destroy']);
 //Internal (Dipanggil Ticket Service)
 Route::post('/internal/events/{id}/decrease-stock',
     [EventController::class, 'decreaseStock']);
+Route::post('/internal/events/{id}/increase-stock',
+    [EventController::class, 'increaseStock']);
+Route::get('/internal/events/{id}/check-stock',
+    [EventController::class, 'checkStock']);
+
+
