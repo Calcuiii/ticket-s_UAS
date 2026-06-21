@@ -29,16 +29,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ─── Redis (shared, bisa dari service lain) ────────────────
-  redis:
-    image: redis:7-alpine
-    container_name: redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    networks:
-      - tubes_network
-
   # ─── Ticket Service (Laravel) ─────────────────────────────
   ticket-service:
     build:
@@ -47,19 +37,18 @@ services:
     container_name: ticket-service
     restart: unless-stopped
     ports:
-      - "8003:8000"
+      - "8004:8000"
     env_file:
       - .env
     environment:
       DB_HOST: db_ticket
-      REDIS_HOST: redis
-      USER_SERVICE_URL: http://user-service:8001
-      EVENT_SERVICE_URL: http://event-service:8002
+      REDIS_HOST: redis-local
+      USER_SERVICE_URL: http://user-service:8002
+      EVENT_SERVICE_URL: http://event_service:8000
+      PAYMENT_SERVICE_URL: http://payment-service:8000
     depends_on:
       db_ticket:
         condition: service_healthy
-      redis:
-        condition: service_started
     networks:
       - tubes_network
 
@@ -72,7 +61,7 @@ services:
     ports:
       - "8080:8080"           # Hasura Console: http://localhost:8080
     environment:
-      HASURA_GRAPHQL_DATABASE_URL: mysql://root:secret@db_ticket:3306/db_ticket
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:hasurasecret@postgres_hasura:5432/hasura_metadata
       HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
       HASURA_GRAPHQL_DEV_MODE: "true"
       HASURA_GRAPHQL_ADMIN_SECRET: "myadminsecretkey"
@@ -80,6 +69,18 @@ services:
     depends_on:
       db_ticket:
         condition: service_healthy
+      postgres_hasura:
+        condition: service_started 
+    networks:
+      - tubes_network
+
+  postgres_hasura:
+    image: postgres:15
+    container_name: postgres_hasura
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: hasurasecret
+      POSTGRES_DB: hasura_metadata
     networks:
       - tubes_network
 

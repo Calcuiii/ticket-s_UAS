@@ -1,0 +1,62 @@
+version: "3.8"
+# ============================================================
+# docker-compose.yml — User Service
+# Naila - TUBES Integrasi Application Enterprise
+# ============================================================
+# CATATAN:
+# - Pakai network tubes_network yang sama dengan service lain.
+# - Tidak ada Redis sendiri, ikut redis-local yang sudah jalan
+#   (kalau User Service butuh Redis untuk cache/queue).
+# - Port internal container = 8002 (sesuai CMD di Dockerfile),
+#   bukan 8000 seperti service lain.
+# - Port host = 8002 (sesuai tabel port resmi tim).
+# ============================================================
+services:
+  db_user:
+    image: mysql:8.0
+    container_name: db_user
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: db_user
+    volumes:
+      - db_user_data:/var/lib/mysql
+    ports:
+      - "3310:3306"           # beda dari db_ticket (3308), db_payment (3309), db_event
+    networks:
+      - tubes_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-psecret"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: user-service
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db_user
+      DB_DATABASE: db_user
+      DB_USERNAME: root
+      DB_PASSWORD: secret
+      REDIS_HOST: redis-local
+    depends_on:
+      db_user:
+        condition: service_healthy
+    networks:
+      - tubes_network
+
+volumes:
+  db_user_data:
+
+networks:
+  tubes_network:
+    external: true
+    name: tubes_network

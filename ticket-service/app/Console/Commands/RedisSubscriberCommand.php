@@ -19,12 +19,13 @@ class RedisSubscriberCommand extends Command
 
         $redis = new RedisClient([
             'scheme'   => 'tcp',
-            'host'     => env('REDIS_HOST', 'redis'),
+            'host'     => env('REDIS_HOST', '127.0.0.1'),
             'port'     => env('REDIS_PORT', 6379),
             'password' => env('REDIS_PASSWORD', null),
+            'read_write_timeout' => 0,
         ]);
 
-        $redis->subscribe(['payment_success', 'payment_failed'], function ($message, $channel) {
+        /* $redis->subscribe(['payment_success', 'payment_failed'], function ($message, $channel) {
             $this->info("[{$channel}] Pesan diterima: {$message}");
 
             $payload = json_decode($message, true);
@@ -46,7 +47,47 @@ class RedisSubscriberCommand extends Command
             } elseif ($channel === 'payment_failed') {
                 $this->handlePaymentFailed($ticket, $payload);
             }
-        });
+        }); */
+        $this->info('HOST = ' . env('REDIS_HOST'));
+        $this->info('PORT = ' . env('REDIS_PORT'));
+        
+        $pubsub = $redis->pubSubLoop();
+
+        $pubsub->subscribe('payment_success', 'payment_failed');
+
+        $this->info('Berhasil subscribe, menunggu pesan...');
+
+        foreach ($pubsub as $message) {
+
+            if ($message->kind !== 'message') {
+                continue;
+            }
+
+            $channel = $message->channel;
+            $payload = json_decode($message->payload, true);
+
+            $this->info("[{$channel}] Pesan diterima: " . $message->payload);
+
+            if (!$payload || !isset($payload['ticket_id'])) {
+                Log::warning("[$channel] Payload tidak valid: " . $message->payload);
+                continue;
+            }
+
+            $ticket = Ticket::find($payload['ticket_id']);
+
+            if (!$ticket) {
+                Log::warning("[$channel] Tiket #{$payload['ticket_id']} tidak ditemukan.");
+                continue;
+            }
+
+            if ($channel === 'payment_success') {
+                $this->handlePaymentSuccess($ticket, $payload);
+            }
+
+            if ($channel === 'payment_failed') {
+                $this->handlePaymentFailed($ticket, $payload);
+            }
+        }
     }
 
     /**

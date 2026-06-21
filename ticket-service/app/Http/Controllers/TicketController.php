@@ -36,7 +36,7 @@ class TicketController extends Controller
         // Ambil data event dari Event Service
         try {
             $eventResponse = Http::get(env('EVENT_SERVICE_URL') . '/graphql', [
-                'query' => "{ event(id: {$eventId}) { id name price stock } }"
+                'query' => "{ event(id: {$eventId}) { id title ticket_price available_stock } }"
             ]);
 
             if ($eventResponse->failed()) {
@@ -56,10 +56,10 @@ class TicketController extends Controller
             }
 
             // Cek stok
-            if ($event['stock'] < $qty) {
+            if ($event['available_stock'] < $qty) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Stok tidak mencukupi. Sisa stok: {$event['stock']}.",
+                    'message' => "Stok tidak mencukupi. Sisa stok: {$event['available_stock']}.",
                 ], 409);
             }
 
@@ -71,7 +71,7 @@ class TicketController extends Controller
         }
 
         // Hitung total harga
-        $totalPrice = $event['price'] * $qty;
+        $totalPrice = $event['ticket_price'] * $qty;
 
         // Buat record tiket dengan status pending
         $ticket = Ticket::create([

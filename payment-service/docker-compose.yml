@@ -1,0 +1,71 @@
+version: "3.8"
+# ============================================================
+# docker-compose.yml — Payment Service
+# Salsa - TUBES Integrasi Application Enterprise
+# ============================================================
+# CATATAN PENTING:
+# - Redis TIDAK didefinisikan di sini. Payment Service ikut
+#   pakai container "redis" yang sudah dijalankan oleh
+#   Ticket Service punya Karin (1 Redis untuk semua service,
+#   biar tidak ada lagi kasus event Redis tidak nyampe).
+# - Pastikan Ticket Service (docker-compose punya Karin) sudah
+#   di-`docker-compose up` duluan SEBELUM Payment Service,
+#   supaya container "redis" sudah ada saat Payment Service start.
+# - Network "tubes_network" harus sudah ada (cek dengan:
+#   docker network ls). Kalau belum ada, jalankan:
+#   docker network create tubes_network
+# ============================================================
+services:
+  # ─── MySQL untuk Payment Service ──────────────────────────
+  db_payment:
+    image: mysql:8.0
+    container_name: db_payment
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: db_payment
+    volumes:
+      - db_payment_data:/var/lib/mysql
+    ports:
+      - "3309:3306"           # beda port host dari db_ticket (3308) & db_event
+    networks:
+      - tubes_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-psecret"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Payment Service (Laravel) ────────────────────────────
+  payment-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payment-service
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db_payment
+      DB_DATABASE: db_payment
+      DB_USERNAME: root
+      DB_PASSWORD: secret
+      REDIS_HOST: redis-local
+      REDIS_PREFIX: ""
+      TICKET_SERVICE_URL: http://ticket-service:8000
+      USER_SERVICE_URL: http://user-service:8000
+    depends_on:
+      db_payment:
+        condition: service_healthy
+    networks:
+      - tubes_network
+
+volumes:
+  db_payment_data:
+
+networks:
+  tubes_network:
+    external: true
+    name: tubes_network

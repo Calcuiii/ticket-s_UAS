@@ -26,7 +26,7 @@ class JwtAuthMiddleware
         try {
             // Call User Service untuk validasi token
             $response = Http::withToken($token)
-                ->get(env('USER_SERVICE_URL') . '/api/auth/me');
+                ->get(env('USER_SERVICE_URL') . '/api/profile');
 
             if ($response->failed()) {
                 return response()->json([
@@ -35,7 +35,7 @@ class JwtAuthMiddleware
                 ], 401);
             }
 
-            $userData = $response->json('data');
+            $userData = $response->json('data.user');
 
             // Inject user data ke request agar controller bisa akses
             $request->merge(['auth_user' => $userData]);

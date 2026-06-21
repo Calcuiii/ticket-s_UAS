@@ -1,12 +1,11 @@
 <?php
-
 namespace App\Http\Controllers;
-
 use App\Models\Transaction;
 use App\Models\PaymentLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Http;
 
 class PaymentController extends Controller
 {
@@ -15,11 +14,9 @@ class PaymentController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'ticket_id'      => 'required|integer',
-            'user_id'        => 'required|integer',
             'amount'         => 'required|numeric',
             'payment_method' => 'required|string',
         ]);
-
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -27,10 +24,33 @@ class PaymentController extends Controller
             ], 422);
         }
 
+        // Ambil data ticket dari Ticket Service untuk cek total_price
+        $token = $request->bearerToken();
+
+        $ticketResponse = Http::withToken($token)
+            ->get('http://ticket-service:8000/api/' . $request->ticket_id);
+
+        if (!$ticketResponse->successful()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ticket tidak ditemukan.',
+            ], 404);
+        }
+
+        $ticket = $ticketResponse->json('data');
+
+        // Validasi: amount tidak boleh kurang dari total_price tiket
+        if ($request->amount < $ticket['total_price']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jumlah pembayaran (' . $request->amount . ') kurang dari total harga tiket (' . $ticket['total_price'] . ').',
+            ], 422);
+        }
+
         // Simpan transaksi dengan status pending dulu
         $transaction = Transaction::create([
             'ticket_id'      => $request->ticket_id,
-            'user_id'        => $request->user_id,
+            'user_id'        => $request->auth_user_id,
             'amount'         => $request->amount,
             'status'         => 'pending',
             'payment_method' => $request->payment_method,
@@ -44,7 +64,6 @@ class PaymentController extends Controller
 
         // Simulasi pembayaran selalu sukses
         $isSuccess = $request->input('simulate_success', true);
-
         $status = $isSuccess ? 'success' : 'failed';
         $transaction->update(['status' => $status]);
 
@@ -57,11 +76,12 @@ class PaymentController extends Controller
 
         // Publish ke Redis
         if ($isSuccess) {
-            Redis::publish('payment_success', json_encode([
+            $count = Redis::publish('payment_success', json_encode([
                 'ticket_id'      => $transaction->ticket_id,
                 'transaction_id' => $transaction->id,
-                'user_id'        => $transaction->user_id,
+                'user_id'        => $request->auth_user_id,
             ]));
+            \Log::info('JUMLAH SUBSCRIBER = ' . $count);
         }
 
         return response()->json([
@@ -75,14 +95,12 @@ class PaymentController extends Controller
     public function show($id)
     {
         $transaction = Transaction::with('logs')->find($id);
-
         if (!$transaction) {
             return response()->json([
                 'success' => false,
                 'message' => 'Transaksi tidak ditemukan.',
             ], 404);
         }
-
         return response()->json([
             'success'     => true,
             'transaction' => $transaction,
@@ -96,7 +114,6 @@ class PaymentController extends Controller
             ->where('user_id', $request->query('user_id'))
             ->orderBy('created_at', 'desc')
             ->get();
-
         return response()->json([
             'success'      => true,
             'transactions' => $transactions,
