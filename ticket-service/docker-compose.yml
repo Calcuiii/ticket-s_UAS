@@ -1,30 +1,24 @@
 version: "3.8"
 
-# ============================================================
-# docker-compose.yml — Ticket Service + Hasura
-# Karin - TUBES Integrasi Application Enterprise
-# ============================================================
-# Jalankan: docker-compose up -d
-# ============================================================
-
 services:
 
   # ─── MySQL untuk Ticket Service ───────────────────────────
   db_ticket:
-    image: mysql:8.0
+    image: postgres:15
     container_name: db_ticket
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: secret
-      MYSQL_DATABASE: db_ticket
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: db_ticket
     volumes:
-      - db_ticket_data:/var/lib/mysql
+      - db_ticket_data:/var/lib/postgresql/data
     ports:
-      - "3308:3306"           # port 3308 di host agar tidak bentrok
+      - "5433:5432"           # port 5433 di host agar tidak bentrok
     networks:
       - tubes_network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-psecret"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,11 +49,11 @@ services:
   # ─── Hasura GraphQL Engine ────────────────────────────────
   # Terhubung ke db_ticket, generate GraphQL endpoint otomatis
   hasura:
-    image: hasura/graphql-engine:v2.36.0
+    image: hasura/graphql-engine:v2.16.0
     container_name: hasura
     restart: unless-stopped
     ports:
-      - "8080:8080"           # Hasura Console: http://localhost:8080
+      - "8085:8080"           # Hasura Console: http://localhost:8080
     environment:
       HASURA_GRAPHQL_METADATA_DATABASE_URL: postgres://postgres:hasurasecret@postgres_hasura:5432/hasura_metadata
       HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
@@ -83,6 +77,7 @@ services:
       POSTGRES_DB: hasura_metadata
     networks:
       - tubes_network
+      
 
 volumes:
   db_ticket_data:

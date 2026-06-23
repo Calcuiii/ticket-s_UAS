@@ -6,6 +6,8 @@ use App\Models\Ticket;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class TicketController extends Controller
 {
@@ -35,18 +37,17 @@ class TicketController extends Controller
 
         // Ambil data event dari Event Service
         try {
-            $eventResponse = Http::get(env('EVENT_SERVICE_URL') . '/graphql', [
-                'query' => "{ event(id: {$eventId}) { id title ticket_price available_stock } }"
+            $response = Http::post(env('EVENT_SERVICE_URL') . '/graphql', [
+                'query' => 'query Event($id: ID!) { event(id: $id) { id title ticket_price available_stock } }',
+                'variables' => ['id' => (string) $eventId]
             ]);
 
-            if ($eventResponse->failed()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Gagal mengambil data event.',
-                ], 502);
+            if ($response->failed()) {
+                Log::error('Gagal mengambil event dari Event Service', ['response' => $response->body()]);
+                return response()->json(['success' => false, 'message' => 'Gagal mengambil data event.'], 502);
             }
 
-            $event = $eventResponse->json('data.event');
+            $event = $response->json('data.event');
 
             if (!$event) {
                 return response()->json([
@@ -64,39 +65,69 @@ class TicketController extends Controller
             }
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal terhubung ke Event Service.',
-            ], 503);
+            return response()->json(['success' => false, 'message' => 'Gagal terhubung ke Event Service.'], 503);
         }
 
         // Hitung total harga
         $totalPrice = $event['ticket_price'] * $qty;
 
-        // Buat record tiket dengan status pending
-        $ticket = Ticket::create([
-            'user_id'     => $userId,
-            'event_id'    => $eventId,
-            'quantity'    => $qty,
-            'total_price' => $totalPrice,
-            'status'      => 'pending',
-        ]);
-
-        // Kurangi stok di Event Service
+         // Mulai transaksi
+        DB::beginTransaction();
         try {
-            Http::patch(env('EVENT_SERVICE_URL') . "/api/events/{$eventId}/stock", [
-                'reduce_by' => $qty,
+            // 1. Buat tiket
+            $ticket = Ticket::create([
+                'user_id'     => $userId,
+                'event_id'    => $eventId,
+                'quantity'    => $qty,
+                'total_price' => $totalPrice,
+                'status'      => 'pending',
             ]);
-        } catch (\Exception $e) {
-            // Log saja, tidak perlu rollback — bisa ditangani dengan saga pattern
-            \Log::warning("Gagal update stok event #{$eventId}: " . $e->getMessage());
-        }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Tiket berhasil dipesan. Silakan lanjutkan ke pembayaran.',
-            'data'    => $ticket,
-        ], 201);
+            // 2. Kurangi stok via GraphQL mutation
+            $newStock = $event['available_stock'] - $qty;
+            $mutation = '
+                mutation UpdateEventStock($id: ID!, $stock: Int!) {
+                    updateEvent(id: $id, input: { available_stock: $stock }) {
+                        id
+                        available_stock
+                    }
+                }
+            ';
+            $stockResponse = Http::post(env('EVENT_SERVICE_URL') . '/graphql', [
+                'query' => $mutation,
+                'variables' => ['id' => (string) $eventId, 'stock' => $newStock]
+            ]);
+
+            // Cek apakah update stok berhasil
+            if ($stockResponse->failed()) {
+                Log::error('Gagal update stok di Event Service', [
+                    'event_id' => $eventId,
+                    'response' => $stockResponse->body()
+                ]);
+                throw new \Exception('Gagal mengurangi stok event.');
+            }
+
+            // 3. Commit jika semua berhasil
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Tiket berhasil dipesan. Silakan lanjutkan ke pembayaran.',
+                'data'    => $ticket,
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Gagal memesan tiket', [
+                'error' => $e->getMessage(),
+                'event_id' => $eventId,
+                'user_id' => $userId
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memesan tiket: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

@@ -83,6 +83,7 @@ input UpdateEventInput {
     event_end_date: String
     ticket_price: Float
     total_stock: Int
+    available_stock: Int
     organizer_name: String
     status: String
 }

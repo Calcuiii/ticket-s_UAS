@@ -52,7 +52,7 @@ services:
 
   # Hasura GraphQL Engine
   hasura:
-    image: hasura/graphql-engine:v2.36.0
+    image: hasura/graphql-engine:v2.16.0
     container_name: hasura_event
     ports:
       - "8081:8080"
